@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Christmas Lights Memory</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #0a1128 0%, #1a2850 30%, #0f1b3d 70%, #050814 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    
+    #gameContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    
+    #statsContainer {
+      display: flex;
+      gap: 30px;
+      margin-bottom: 20px;
+    }
+    
+    .stat-box {
+      padding: 20px 40px;
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      border: 4px solid;
+      text-align: center;
+    }
+    
+    .stat-box.level {
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      border-color: #60a5fa;
+    }
+    
+    .stat-box.score {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      border-color: #34d399;
+    }
+    
+    .stat-label {
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .stat-value {
+      color: white;
+      font-size: 48px;
+      font-weight: 900;
+    }
+    
+    #canvas {
+      border-radius: 16px;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+    }
+    
+    #paletteContainer {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .palette-bulb {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .palette-bulb:hover {
+      transform: scale(1.1);
+    }
+    
+    .palette-bulb.selected {
+      transform: scale(1.25);
+      border: 4px solid white;
+    }
+    
+    #repeatBtn {
+      padding: 20px 40px;
+      border-radius: 24px;
+      border: 4px solid #60a5fa;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      font-size: 22px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    #repeatBtn:hover:not(:disabled) {
+      transform: scale(1.05);
+    }
+    
+    #repeatBtn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    #dragCursor {
+      position: fixed;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.6);
+      pointer-events: none;
+      display: none;
+      z-index: 1000;
+    }
+    
+    #menuInfo {
+      text-align: center;
+      color: white;
+      margin-top: 20px;
+    }
+    
+    #menuInfo .subtitle {
+      font-size: 20px;
+      opacity: 0.75;
+      margin-bottom: 10px;
+    }
+    
+    #menuInfo .credit {
+      font-size: 14px;
+      color: #93c5fd;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <div id="statsContainer" style="display: none;">
+      <div class="stat-box level">
+        <div class="stat-label">Level</div>
+        <div class="stat-value" id="levelDisplay">1</div>
+      </div>
+      <div class="stat-box score">
+        <div class="stat-label">Score</div>
+        <div class="stat-value" id="scoreDisplay">0</div>
+      </div>
+    </div>
+    
+    <canvas id="canvas" width="1000" height="600"></canvas>
+    
+    <div id="paletteContainer" style="display: none;"></div>
+    <button id="repeatBtn" style="display: none;">
+      <span>↻</span>
+      <span id="repeatText">REPEAT</span>
+    </button>
+    
+    <div id="menuInfo">
+      <div class="subtitle">A color-based memory game</div>
+      <div class="credit">For the SkillUp Christmas Game Jam 2025</div>
+    </div>
+  </div>
+  
+  <div id="dragCursor"></div>
+
+  <script>
+    const COLORS = [
+      { hex: '#FF3333', name: 'red' },
+      { hex: '#33FF33', name: 'green' },
+      { hex: '#3333FF', name: 'blue' },
+      { hex: '#FFFF33', name: 'yellow' },
+      { hex: '#33FFFF', name: 'cyan' }
+    ];
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statsContainer = document.getElementById('statsContainer');
+    const levelDisplay = document.getElementById('levelDisplay');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const paletteContainer = document.getElementById('paletteContainer');
+    const repeatBtn = document.getElementById('repeatBtn');
+    const repeatText = document.getElementById('repeatText');
+    const dragCursor = document.getElementById('dragCursor');
+    const menuInfo = document.getElementById('menuInfo');
+
+    let gameState = 'menu';
+    let level = 1;
+    let score = 0;
+    let sequence = [];
+    let playerSequence = [];
+    let phase = 'ready';
+    let flashingIndex = -1;
+    let flashProgress = 0;
+    let repeatCooldown = 0;
+    let draggedColor = null;
+    let showWrong = false;
+    let successParticles = [];
+    let flashInterval = null;
+    let cooldownInterval = null;
+
+    const snowflakes = Array(50).fill(0).map(() => ({
+      x: Math.random() * 1000,
+      y: Math.random() * 600,
+      speed: 0.3 + Math.random() * 0.5,
+      size: 1 + Math.random() * 2,
+      opacity: 0.3 + Math.random() * 0.4
+    }));
+
+    function startGame() {
+      gameState = 'playing';
+      level = 1;
+      score = 0;
+      phase = 'ready';
+      statsContainer.style.display = 'flex';
+      menuInfo.style.display = 'none';
+      updateUI();
+      setTimeout(startNewRound, 100);
+    }
+
+    function startNewRound() {
+      const bulbCount = Math.min(level, 8);
+      sequence = Array(bulbCount).fill(0).map(() => 
+        Math.floor(Math.random() * Math.min(4 + Math.floor(level / 2), 5))
+      );
+      playerSequence = Array(bulbCount).fill(null);
+      phase = 'flashing';
+      flashingIndex = 0;
+      flashProgress = 0;
+      paletteContainer.style.display = 'none';
+      repeatBtn.style.display = 'none';
+      startFlashing();
+    }
+
+    function startFlashing() {
+      let progress = 0;
+      const totalDuration = 600;
+      
+      flashInterval = setInterval(() => {
+        progress += 16;
+        flashProgress = progress / totalDuration;
+
+        if (progress >= totalDuration) {
+          clearInterval(flashInterval);
+          flashingIndex++;
+          flashProgress = 0;
+          
+          if (flashingIndex >= sequence.length) {
+            phase = 'clear';
+            flashingIndex = -1;
+            setTimeout(() => {
+              phase = 'input';
+              showPalette();
+            }, 400);
+          } else {
+            startFlashing();
+          }
+        }
+      }, 16);
+    }
+
+    function showPalette() {
+      paletteContainer.style.display = 'flex';
+      repeatBtn.style.display = 'flex';
+      paletteContainer.innerHTML = '';
+      
+      const colorCount = Math.min(4 + Math.floor(level / 2), 5);
+      for (let i = 0; i < colorCount; i++) {
+        const bulb = document.createElement('div');
+        bulb.className = 'palette-bulb';
+        bulb.style.backgroundColor = COLORS[i].hex;
+        bulb.style.boxShadow = `0 0 20px ${COLORS[i].hex}, 0 4px 6px rgba(0,0,0,0.3)`;
+        bulb.onclick = () => selectColor(i);
+        paletteContainer.appendChild(bulb);
+      }
+    }
+
+    function selectColor(colorIndex) {
+      if (draggedColor === colorIndex) {
+        draggedColor = null;
+        document.querySelectorAll('.palette-bulb').forEach(b => b.classList.remove('selected'));
+      } else {
+        draggedColor = colorIndex;
+        document.querySelectorAll('.palette-bulb').forEach((b, i) => {
+          b.classList.toggle('selected', i === colorIndex);
+        });
+      }
+    }
+
+    function repeatSequence() {
+      if (repeatCooldown === 0 && phase === 'input') {
+        repeatCooldown = 10;
+        score--;
+        updateUI();
+        startCooldown();
+        playerSequence = Array(sequence.length).fill(null);
+        phase = 'flashing';
+        flashingIndex = 0;
+        flashProgress = 0;
+        paletteContainer.style.display = 'none';
+        repeatBtn.style.display = 'none';
+        draggedColor = null;
+        startFlashing();
+      }
+    }
+
+    function startCooldown() {
+      cooldownInterval = setInterval(() => {
+        repeatCooldown--;
+        repeatText.textContent = repeatCooldown > 0 ? repeatCooldown : 'REPEAT';
+        if (repeatCooldown === 0) {
+          clearInterval(cooldownInterval);
+          repeatBtn.disabled = false;
+        }
+      }, 1000);
+      repeatBtn.disabled = true;
+    }
+
+    function checkSequence() {
+      const correct = playerSequence.every((color, i) => color === sequence[i]);
+      
+      setTimeout(() => {
+        if (correct) {
+          phase = 'success';
+          createSuccessParticles();
+          score += 10;
+          updateUI();
+          
+          setTimeout(() => {
+            successParticles = [];
+            level++;
+            phase = 'ready';
+            updateUI();
+            setTimeout(startNewRound, 100);
+          }, 2000);
+        } else {
+          phase = 'fail';
+          showWrong = true;
+          
+          setTimeout(() => {
+            showWrong = false;
+            playerSequence = Array(sequence.length).fill(null);
+            phase = 'flashing';
+            flashingIndex = 0;
+            flashProgress = 0;
+            paletteContainer.style.display = 'none';
+            repeatBtn.style.display = 'none';
+            draggedColor = null;
+            startFlashing();
+          }, 1500);
+        }
+      }, 300);
+    }
+
+    function createSuccessParticles() {
+      for (let i = 0; i < 50; i++) {
+        successParticles.push({
+          x: 500 + (Math.random() - 0.5) * 200,
+          y: 200 + (Math.random() - 0.5) * 100,
+          vx: (Math.random() - 0.5) * 5,
+          vy: (Math.random() - 0.5) * 5,
+          life: 1,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)].hex,
+          size: Math.random() * 4 + 2
+        });
+      }
+    }
+
+    function updateUI() {
+      levelDisplay.textContent = level;
+      scoreDisplay.textContent = score;
+    }
+
+    function drawBackground() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, 600);
+      gradient.addColorStop(0, '#0a1128');
+      gradient.addColorStop(0.3, '#1a2850');
+      gradient.addColorStop(0.7, '#0f1b3d');
+      gradient.addColorStop(1, '#050814');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 1000, 600);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      for (let i = 0; i < 100; i++) {
+        const x = (i * 137.5) % 1000;
+        const y = (i * 73.3) % 600;
+        const size = Math.random() * 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      snowflakes.forEach(flake => {
+        flake.y += flake.speed;
+        if (flake.y > 600) {
+          flake.y = -10;
+          flake.x = Math.random() * 1000;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = flake.opacity;
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(flake.x, flake.y, flake.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function drawMenu() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, 1000, 600);
+
+      ctx.fillStyle = 'rgba(20, 30, 50, 0.9)';
+      ctx.fillRect(150, 100, 700, 400);
+
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = '#FFD700';
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(150, 100, 700, 400);
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#FFD700';
+      const cornerSize = 15;
+      ctx.fillRect(150, 100, cornerSize * 3, cornerSize);
+      ctx.fillRect(150, 100, cornerSize, cornerSize * 3);
+      ctx.fillRect(850 - cornerSize * 3, 100, cornerSize * 3, cornerSize);
+      ctx.fillRect(850 - cornerSize, 100, cornerSize, cornerSize * 3);
+      ctx.fillRect(150, 500 - cornerSize, cornerSize * 3, cornerSize);
+      ctx.fillRect(150, 500 - cornerSize * 3, cornerSize, cornerSize * 3);
+      ctx.fillRect(850 - cornerSize * 3, 500 - cornerSize, cornerSize * 3, cornerSize);
+      ctx.fillRect(850 - cornerSize, 500 - cornerSize * 3, cornerSize, cornerSize * 3);
+
+      const titleGradient = ctx.createLinearGradient(500, 160, 500, 200);
+      titleGradient.addColorStop(0, '#FFD700');
+      titleGradient.addColorStop(0.5, '#FFF');
+      titleGradient.addColorStop(1, '#FFD700');
+      ctx.fillStyle = titleGradient;
+      ctx.font = 'bold 56px Arial';
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#FFD700';
+      ctx.fillText('Christmas Lights', 500, 200);
+      ctx.shadowBlur = 0;
+      
+      ctx.fillStyle = '#88CCFF';
+      ctx.font = 'italic 28px Arial';
+      ctx.fillText('Memory Challenge', 500, 245);
+
+      const time = Date.now() * 0.001;
+      const bulbY = 290;
+      const bulbColors = ['#FF3333', '#33FF33', '#3333FF', '#FFFF33'];
+      for (let i = 0; i < 5; i++) {
+        const x = 300 + i * 100;
+        const color = bulbColors[i % bulbColors.length];
+        const glow = 0.5 + Math.sin(time * 2 + i) * 0.5;
+        
+        ctx.shadowBlur = 20 * glow;
+        ctx.shadowColor = color;
+        const bulbGradient = ctx.createRadialGradient(x, bulbY, 0, x, bulbY, 15);
+        bulbGradient.addColorStop(0, color);
+        bulbGradient.addColorStop(1, color + '88');
+        ctx.fillStyle = bulbGradient;
+        ctx.beginPath();
+        ctx.arc(x, bulbY, 15, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, bulbY, 12, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.beginPath();
+        ctx.arc(x - 4, bulbY - 4, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '20px Arial';
+      ctx.fillText('Watch the lights flash in sequence', 500, 360);
+      ctx.fillText('Then recreate the pattern from memory', 500, 390);
+      
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 22px Arial';
+      ctx.fillText('🎨 Color is everything! 🎨', 500, 430);
+
+      const alpha = 0.5 + Math.sin(time * 3) * 0.5;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#88FF88';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText('Click anywhere to start!', 500, 470);
+      ctx.globalAlpha = 1;
+    }
+
+    function drawRailing() {
+      const gradient = ctx.createLinearGradient(0, 150, 0, 280);
+      gradient.addColorStop(0, '#4a2f1a');
+      gradient.addColorStop(0.2, '#5d3a21');
+      gradient.addColorStop(0.5, '#6b4423');
+      gradient.addColorStop(0.8, '#5d3a21');
+      gradient.addColorStop(1, '#3d2412');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(80, 150, 840, 130);
+      
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 15; i++) {
+        ctx.beginPath();
+        ctx.moveTo(80, 160 + i * 10);
+        ctx.lineTo(920, 160 + i * 10 + Math.random() * 5);
+        ctx.stroke();
+      }
+      
+      ctx.strokeStyle = '#2d1a0d';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(80, 150, 840, 130);
+      
+      ctx.strokeStyle = 'rgba(139, 90, 43, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(88, 158, 824, 114);
+    }
+
+    function drawString() {
+      ctx.strokeStyle = '#2d4a2d';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = 3;
+      ctx.shadowOffsetY = 2;
+      
+      ctx.beginPath();
+      const startX = 150;
+      const endX = 850;
+      const bulbCount = sequence.length;
+      const spacing = (endX - startX) / (bulbCount + 1);
+      
+      for (let i = 0; i <= bulbCount + 1; i++) {
+        const x = startX + i * spacing;
+        const y = 185 + Math.sin(i * 0.5) * 2;
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    function drawBulbs() {
+      const startX = 150;
+      const endX = 850;
+      const bulbCount = sequence.length;
+      const spacing = (endX - startX) / (bulbCount + 1);
+      const bulbY = 220;
+
+      for (let i = 0; i < bulbCount; i++) {
+        const x = startX + (i + 1) * spacing;
+        
+        ctx.strokeStyle = '#2d4a2d';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 185 + Math.sin((i + 1) * 0.5) * 2);
+        ctx.lineTo(x, bulbY - 20);
+        ctx.stroke();
+
+        ctx.fillStyle = '#3a3a3a';
+        ctx.fillRect(x - 6, bulbY - 22, 12, 8);
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 6, bulbY - 22, 12, 8);
+
+        let glowIntensity = 0;
+        let bulbColor = '#1a1a1a';
+
+        if (phase === 'flashing' && flashingIndex === i) {
+          const easeProgress = flashProgress < 0.3 ? flashProgress / 0.3 : 
+                             flashProgress < 0.7 ? 1 :
+                             1 - (flashProgress - 0.7) / 0.3;
+          glowIntensity = easeProgress;
+          bulbColor = COLORS[sequence[i]].hex;
+        } else if ((phase === 'input' || phase === 'checking') && playerSequence[i] !== null) {
+          glowIntensity = 0.7;
+          bulbColor = COLORS[playerSequence[i]].hex;
+        } else if (phase === 'success') {
+          glowIntensity = 0.6 + Math.sin(Date.now() * 0.005) * 0.4;
+          bulbColor = COLORS[sequence[i]].hex;
+        } else if (phase === 'fail' && playerSequence[i] !== sequence[i]) {
+          glowIntensity = 0.2;
+          bulbColor = '#444';
+        }
+
+        if (glowIntensity > 0.1) {
+          ctx.save();
+          ctx.shadowBlur = 35 * glowIntensity;
+          ctx.shadowColor = bulbColor;
+          
+          const outerGlow = ctx.createRadialGradient(x, bulbY, 0, x, bulbY, 25);
+          outerGlow.addColorStop(0, bulbColor);
+          outerGlow.addColorStop(0.5, bulbColor + '66');
+          outerGlow.addColorStop(1, bulbColor + '00');
+          
+          ctx.fillStyle = outerGlow;
+          ctx.beginPath();
+          ctx.arc(x, bulbY, 25 * (1 + glowIntensity * 0.3), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.save();
+        const bulbGradient = ctx.createRadialGradient(x - 5, bulbY - 5, 0, x, bulbY, 18);
+        if (glowIntensity > 0.1) {
+          bulbGradient.addColorStop(0, bulbColor);
+          bulbGradient.addColorStop(0.7, bulbColor);
+          bulbGradient.addColorStop(1, bulbColor + 'AA');
+        } else {
+          bulbGradient.addColorStop(0, '#2a2a2a');
+          bulbGradient.addColorStop(1, '#1a1a1a');
+        }
+        
+        ctx.fillStyle = bulbGradient;
+        ctx.beginPath();
+        ctx.arc(x, bulbY, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        const highlight = ctx.createRadialGradient(x - 7, bulbY - 7, 0, x - 3, bulbY - 3, 12);
+        highlight.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+        highlight.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+        highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = highlight;
+        ctx.beginPath();
+        ctx.arc(x, bulbY, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, bulbY, 18, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.restore();
+      }
+    }
+
+    function drawSuccessParticles() {
+      if (successParticles.length === 0) return;
+
+      successParticles = successParticles.map(p => ({
+        ...p,
+        x: p.x + p.vx,
+        y: p.y + p.vy,
+        life: p.life - 0.02
+      })).filter(p => p.life > 0);
+
+      successParticles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function drawWrongText() {
+      ctx.save();
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillRect(300, 300, 400, 100);
+      
+      ctx.strokeStyle = '#FF0000';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(300, 300, 400, 100);
+      
+      ctx.font = 'bold 72px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#FF0000';
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = '#FF0000';
+      ctx.fillText('WRONG!', 500, 350);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, 1000, 600);
+
+      drawBackground();
+      
+      if (gameState === 'playing') {
+        drawRailing();
+        drawString();
+        drawBulbs();
+        drawSuccessParticles();
+        
+        if (showWrong) {
+          drawWrongText();
+        }
+      } else {
+        drawMenu();
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (gameState === 'menu') {
+        startGame();
+        return;
+      }
+
+      if (phase !== 'input' || draggedColor === null) return;
+
+      const startX = 150;
+      const endX = 850;
+      const bulbCount = sequence.length;
+      const spacing = (endX - startX) / (bulbCount + 1);
+      const bulbY = 220;
+
+      for (let i = 0; i < bulbCount; i++) {
+        const bulbX = startX + (i + 1) * spacing;
+        const distance = Math.sqrt((x - bulbX) ** 2 + (y - bulbY) ** 2);
+
+        if (distance < 25 && playerSequence[i] === null) {
+          playerSequence[i] = draggedColor;
+          draggedColor = null;
+          document.querySelectorAll('.palette-bulb').forEach(b => b.classList.remove('selected'));
+          
+          if (playerSequence.every(c => c !== null)) {
+            phase = 'checking';
+            paletteContainer.style.display = 'none';
+            repeatBtn.style.display = 'none';
+            checkSequence();
+          }
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (draggedColor !== null) {
+        const rect = canvas.getBoundingClientRect();
+        dragCursor.style.display = 'block';
+        dragCursor.style.left = (e.clientX - 25) + 'px';
+        dragCursor.style.top = (e.clientY - 25) + 'px';
+        dragCursor.style.backgroundColor = COLORS[draggedColor].hex;
+        dragCursor.style.boxShadow = `0 0 30px ${COLORS[draggedColor].hex}`;
+      } else {
+        dragCursor.style.display = 'none';
+      }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      dragCursor.style.display = 'none';
+    });
+
+    repeatBtn.addEventListener('click', repeatSequence);
+
+    animate();
+    </script>
+    </html>
